@@ -91,7 +91,7 @@
  * rwxrwx--- u10_a12:sdcard_rw  /Android/user/10/Android/data/com.example
  */
 
-#define FUSE_TRACE 0
+#define FUSE_TRACE 1
 
 #if FUSE_TRACE
 #define TRACE(x...) ALOGD(x)
@@ -126,6 +126,8 @@ static const char* const kPackagesListFile = "/data/system/packages.list";
 
 /* Supplementary groups to execute with */
 static const gid_t kGroups[1] = { AID_PACKAGE_INFO };
+
+static Hashmap* name_with_offset;
 
 /* Permission mode for a specific node. Controls how file permissions
  * are derived for children nodes. */
@@ -741,7 +743,7 @@ static void fuse_init(struct fuse *fuse, int fd, const char *source_path,
     fuse->root.name = strdup(source_path);
     fuse->root.userid = 0;
     fuse->root.uid = AID_ROOT;
-
+    name_with_offset = hashmapCreate(256, str_hash, str_icase_equals);
     /* Set up root node for various modes of operation */
     switch (derive) {
     case DERIVE_NONE:
@@ -1260,6 +1262,7 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
     __u64 unique = hdr->unique;
     __u32 size = req->size;
     __u64 offset = req->offset;
+    char *key = "01234567890123456789012345678901";
     int res;
     __u8 *read_buffer = (__u8 *) ((uintptr_t)(handler->read_buffer + PAGESIZE) & ~((uintptr_t)PAGESIZE-1));
 
@@ -1267,12 +1270,17 @@ static int handle_read(struct fuse* fuse, struct fuse_handler* handler,
      * overlaps the request buffer and will clobber data in the request.  This
      * saves us 128KB per request handler thread at the cost of this scary comment. */
 
-    TRACE("[%d] READ %p(%d) %u@%"PRIu64"\n", handler->token,
-            h, h->fd, size, (uint64_t) offset);
+//    TRACE("[%d] READ %p(%d) %u@%"PRIu64"\n", handler->token,
+//            h, h->fd, size, (uint64_t) offset);
+
     if (size > MAX_READ) {
         return -EINVAL;
     }
-    res = pread64(h->fd, read_buffer, size, offset);
+//    res = cryptoRead(h -> fd, read_buffer, size, offset, key);
+//    res = pread64(h->fd, read_buffer, size, offset);
+    res = file_pread(h->fd, read_buffer, size, offset, key, name_with_offset);
+    ERROR("[%d READ %u  %"PRIu64"  %d]",
+                                       h->fd, req->size, req->offset, res);
     if (res < 0) {
         return -errno;
     }
@@ -1285,6 +1293,7 @@ static int handle_write(struct fuse* fuse, struct fuse_handler* handler,
         const void* buffer)
 {
     struct fuse_write_out out;
+    char *key = "01234567890123456789012345678901";
     struct handle *h = id_to_ptr(req->fh);
     int res;
     __u8 aligned_buffer[req->size] __attribute__((__aligned__(PAGESIZE)));
@@ -1294,9 +1303,14 @@ static int handle_write(struct fuse* fuse, struct fuse_handler* handler,
         buffer = (const __u8*) aligned_buffer;
     }
 
-    TRACE("[%d] WRITE %p(%d) %u@%"PRIu64"\n", handler->token,
-            h, h->fd, req->size, req->offset);
-    res = pwrite64(h->fd, buffer, req->size, req->offset);
+//    TRACE("[%d] WRITE %p(%d) %u@%"PRIu64"\n", handler->token,
+//            h, h->fd, req->size, req->offset);
+
+//    res = pwrite64(h->fd, buffer, req->size, req->offset);
+//    res = cryptoWrite(h -> fd, buffer, req -> size, req -> offset, key);
+    res = file_pwrite(h -> fd, buffer, req -> size, req -> offset, key);
+    ERROR("[%d WRITE %u  %"PRIu64"   %d]",
+                             h->fd, req->size, req->offset, res);
     if (res < 0) {
         return -errno;
     }
